@@ -1,0 +1,63 @@
+{
+  "name": "nfi-tools",
+  "version": "0.1.0",
+  "description": "CLI tool and MCP server for handling sensitive information without exposing values to AI assistants",
+  "type": "module",
+  "bin": {
+    "nfi": "./dist/cli/index.js"
+  },
+  "exports": {
+    ".": "./dist/core/index.js",
+    "./mcp": "./dist/mcp/index.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "secrets",
+    "env",
+    "environment",
+    "sensitive",
+    "ai",
+    "llm",
+    "mcp",
+    "cli",
+    "password",
+    "security"
+  ],
+  "author": "Ben Dechrai <ben@dechrai.com> (https://bendechr.ai)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bendechrai/nfi-tool.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bendechrai/nfi-tool/issues"
+  },
+  "homepage": "https://github.com/bendechrai/nfi-tool#readme",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "commander": "^14.0.3",
+    "open": "^11.0.0",
+    "smol-toml": "^1.6.0",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

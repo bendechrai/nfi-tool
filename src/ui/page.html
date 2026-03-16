@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nfi - Enter Secrets</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-muted: #666666;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --danger: #dc2626;
+    --success: #16a34a;
+    --success-bg: #f0fdf4;
+    --disabled-bg: #f5f5f5;
+    --disabled-text: #999999;
+    --font: system-ui, -apple-system, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0a;
+      --surface: #1a1a1a;
+      --border: #333333;
+      --text: #e5e5e5;
+      --text-muted: #999999;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success-bg: #052e16;
+      --disabled-bg: #111111;
+      --disabled-text: #555555;
+    }
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+
+  .container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 520px;
+  }
+
+  h1 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .field {
+    margin-bottom: 1.25rem;
+  }
+
+  .field-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.375rem;
+  }
+
+  label {
+    font-family: var(--mono);
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .overwrite-toggle {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    cursor: pointer;
+  }
+
+  .overwrite-toggle input { cursor: pointer; }
+
+  .existing-badge {
+    font-size: 0.6875rem;
+    color: var(--disabled-text);
+    background: var(--disabled-bg);
+    border: 1px solid var(--border);
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+    margin-left: 0.5rem;
+  }
+
+  .input-wrap {
+    position: relative;
+    display: flex;
+  }
+
+  input[type="password"],
+  input[type="text"] {
+    width: 100%;
+    padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+    font-family: var(--mono);
+    font-size: 0.875rem;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  input:focus { border-color: var(--primary); }
+
+  input:disabled {
+    background: var(--disabled-bg);
+    color: var(--disabled-text);
+    cursor: not-allowed;
+  }
+
+  .toggle-vis {
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.25rem;
+    font-size: 1rem;
+    line-height: 1;
+  }
+
+  .toggle-vis:hover { color: var(--text); }
+
+  .actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+  }
+
+  button[type="submit"] {
+    flex: 1;
+    padding: 0.625rem 1.25rem;
+    background: var(--primary);
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  button[type="submit"]:hover { background: var(--primary-hover); }
+  button[type="submit"]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .success {
+    text-align: center;
+    padding: 2rem 1rem;
+  }
+
+  .success-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .success h2 {
+    font-size: 1.125rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .success p {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+
+  .error {
+    color: var(--danger);
+    font-size: 0.8125rem;
+    margin-top: 1rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="container" id="app">
+  <form id="form">
+    <h1>nfi</h1>
+    <p class="subtitle">Enter secret values below. Values are written directly to <code id="target-file"></code> and never sent to any AI.</p>
+
+    <div id="fields"></div>
+
+    <div class="actions">
+      <button type="submit" id="submit-btn">Save</button>
+    </div>
+
+    <div class="error" id="error" hidden></div>
+  </form>
+
+  <div class="success" id="success" hidden>
+    <div class="success-icon">&#10003;</div>
+    <h2>Secrets saved</h2>
+    <p>You can close this tab.</p>
+  </div>
+</div>
+
+<script>
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token");
+  const keys = JSON.parse(decodeURIComponent(params.get("keys") || "[]"));
+  const existing = JSON.parse(decodeURIComponent(params.get("existing") || "[]"));
+  const file = decodeURIComponent(params.get("file") || "");
+
+  document.getElementById("target-file").textContent = file;
+
+  const fieldsEl = document.getElementById("fields");
+  const formEl = document.getElementById("form");
+  const errorEl = document.getElementById("error");
+  const successEl = document.getElementById("success");
+  const submitBtn = document.getElementById("submit-btn");
+
+  for (const key of keys) {
+    const isExisting = existing.includes(key);
+    const fieldId = "field-" + key.replace(/[^a-zA-Z0-9]/g, "-");
+
+    const field = document.createElement("div");
+    field.className = "field";
+
+    const header = document.createElement("div");
+    header.className = "field-header";
+
+    const labelEl = document.createElement("label");
+    labelEl.setAttribute("for", fieldId);
+    labelEl.textContent = key;
+    header.appendChild(labelEl);
+
+    if (isExisting) {
+      const badge = document.createElement("span");
+      badge.className = "existing-badge";
+      badge.textContent = "already set";
+      labelEl.appendChild(badge);
+
+      const toggle = document.createElement("label");
+      toggle.className = "overwrite-toggle";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.addEventListener("change", function() {
+        input.disabled = !cb.checked;
+        if (cb.checked) input.focus();
+      });
+      toggle.appendChild(cb);
+      toggle.appendChild(document.createTextNode("overwrite"));
+      header.appendChild(toggle);
+    }
+
+    field.appendChild(header);
+
+    const wrap = document.createElement("div");
+    wrap.className = "input-wrap";
+
+    const input = document.createElement("input");
+    input.type = "password";
+    input.id = fieldId;
+    input.name = key;
+    input.autocomplete = "new-password";
+    input.disabled = isExisting;
+    if (!isExisting) input.required = true;
+    wrap.appendChild(input);
+
+    const visBtn = document.createElement("button");
+    visBtn.type = "button";
+    visBtn.className = "toggle-vis";
+    visBtn.textContent = "\u{1F441}";
+    visBtn.title = "Toggle visibility";
+    visBtn.addEventListener("click", function() {
+      const isPassword = input.type === "password";
+      input.type = isPassword ? "text" : "password";
+    });
+    wrap.appendChild(visBtn);
+
+    field.appendChild(wrap);
+    fieldsEl.appendChild(field);
+  }
+
+  formEl.addEventListener("submit", async function(e) {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    errorEl.hidden = true;
+
+    const values = {};
+    for (const key of keys) {
+      const fieldId = "field-" + key.replace(/[^a-zA-Z0-9]/g, "-");
+      const input = document.getElementById(fieldId);
+      if (!input.disabled && input.value) {
+        values[key] = input.value;
+      }
+    }
+
+    if (Object.keys(values).length === 0) {
+      errorEl.textContent = "No values to save. Enter at least one secret or enable overwrite.";
+      errorEl.hidden = false;
+      submitBtn.disabled = false;
+      return;
+    }
+
+    try {
+      const resp = await fetch("/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, values }),
+      });
+
+      if (!resp.ok) {
+        const data = await resp.json();
+        throw new Error(data.error || "Failed to save");
+      }
+
+      formEl.hidden = true;
+      successEl.hidden = false;
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.hidden = false;
+      submitBtn.disabled = false;
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
