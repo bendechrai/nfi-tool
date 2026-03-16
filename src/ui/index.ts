@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Tunnel } from "cloudflared";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -108,8 +109,9 @@ export function createBrowserPromptSession(options: BrowserPromptOptions): {
   });
 
   let serverInstance: http.Server;
+  let tunnelInstance: Tunnel | undefined;
+  let tunnelOrigin: string | undefined;
   let timeoutHandle: ReturnType<typeof setTimeout>;
-  let tokenConsumed = false; // One-time token: once GET is served, no more GETs
   let submitConsumed = false; // One-time submit: only one POST is accepted
 
   const server = http.createServer((req, res) => {
@@ -126,13 +128,11 @@ export function createBrowserPromptSession(options: BrowserPromptOptions): {
         return;
       }
 
-      if (tokenConsumed) {
+      if (submitConsumed) {
         res.writeHead(403, { "Content-Type": "text/plain" });
-        res.end("Token already used");
+        res.end("Already submitted");
         return;
       }
-
-      tokenConsumed = true;
 
       res.writeHead(200, {
         "Content-Type": "text/html",
@@ -151,9 +151,11 @@ export function createBrowserPromptSession(options: BrowserPromptOptions): {
         return;
       }
 
-      // Require Origin header and check it matches localhost
+      // Require Origin header and check it matches localhost or the tunnel
       const origin = req.headers.origin;
-      if (!origin || (!origin.startsWith("http://127.0.0.1:") && !origin.startsWith("http://localhost:"))) {
+      const isLocalOrigin = origin?.startsWith("http://127.0.0.1:") || origin?.startsWith("http://localhost:");
+      const isTunnelOrigin = tunnelOrigin && origin === tunnelOrigin;
+      if (!origin || (!isLocalOrigin && !isTunnelOrigin)) {
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Forbidden origin" }));
         return;
@@ -200,6 +202,10 @@ export function createBrowserPromptSession(options: BrowserPromptOptions): {
 
           clearTimeout(timeoutHandle);
           server.close();
+          if (tunnelInstance) {
+            tunnelInstance.stop();
+            tunnelInstance = undefined;
+          }
           resolveValues(values);
         } catch {
           res.writeHead(400, { "Content-Type": "application/json" });
@@ -224,10 +230,62 @@ export function createBrowserPromptSession(options: BrowserPromptOptions): {
       return;
     }
 
+    const localPort = address.port;
     const keysParam = encodeURIComponent(JSON.stringify(keys));
     const existingParam = encodeURIComponent(JSON.stringify(existingKeys));
     const fileParam = encodeURIComponent(file);
-    const url = `http://127.0.0.1:${address.port}/?token=${token}&keys=${keysParam}&existing=${existingParam}&file=${fileParam}`;
+
+    // Start a Cloudflare quick tunnel for HTTPS access
+    let baseUrl = `http://127.0.0.1:${localPort}`;
+    try {
+      const tunnel = Tunnel.quick(`http://127.0.0.1:${localPort}`);
+      tunnelInstance = tunnel;
+
+      // Wait for both the URL and at least one connection to be established
+      const cfUrl = await new Promise<string>((resolve, reject) => {
+        const startupTimeout = setTimeout(() => {
+          reject(new Error("Tunnel startup timed out"));
+        }, 30000);
+
+        let tunnelUrl: string | undefined;
+        let connected = false;
+
+        const tryResolve = () => {
+          if (tunnelUrl && connected) {
+            clearTimeout(startupTimeout);
+            resolve(tunnelUrl);
+          }
+        };
+
+        tunnel.once("url", (url) => {
+          tunnelUrl = url;
+          tryResolve();
+        });
+
+        tunnel.once("connected", () => {
+          connected = true;
+          tryResolve();
+        });
+
+        tunnel.once("error", (err) => {
+          clearTimeout(startupTimeout);
+          reject(err);
+        });
+
+        tunnel.once("exit", (code) => {
+          clearTimeout(startupTimeout);
+          reject(new Error(`Tunnel exited with code ${code}`));
+        });
+      });
+
+      baseUrl = cfUrl;
+      tunnelOrigin = new URL(cfUrl).origin;
+    } catch {
+      // Tunnel failed - fall back to localhost URL
+      tunnelInstance = undefined;
+    }
+
+    const url = `${baseUrl}/?token=${token}&keys=${keysParam}&existing=${existingParam}&file=${fileParam}`;
 
     resolveUrl(url);
 
@@ -242,6 +300,10 @@ export function createBrowserPromptSession(options: BrowserPromptOptions): {
 
     timeoutHandle = setTimeout(() => {
       server.close();
+      if (tunnelInstance) {
+        tunnelInstance.stop();
+        tunnelInstance = undefined;
+      }
       rejectValues(new Error("Timed out waiting for secret input"));
     }, timeout);
   });
@@ -252,12 +314,18 @@ export function createBrowserPromptSession(options: BrowserPromptOptions): {
     rejectValues(error);
   });
 
+  const cleanup = () => {
+    clearTimeout(timeoutHandle);
+    serverInstance.close();
+    if (tunnelInstance) {
+      tunnelInstance.stop();
+      tunnelInstance = undefined;
+    }
+  };
+
   return {
     url: urlPromise,
     values: valuesPromise,
-    close: () => {
-      clearTimeout(timeoutHandle);
-      serverInstance.close();
-    },
+    close: cleanup,
   };
 }
