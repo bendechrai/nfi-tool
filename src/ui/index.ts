@@ -238,10 +238,10 @@ export function createBrowserPromptSession(options: BrowserPromptOptions): {
     // Start a Cloudflare quick tunnel for HTTPS access
     let baseUrl = `http://127.0.0.1:${localPort}`;
     try {
+      process.stderr.write("Starting HTTPS tunnel...\n");
       const tunnel = Tunnel.quick(`http://127.0.0.1:${localPort}`);
       tunnelInstance = tunnel;
 
-      // Wait for both the URL and at least one connection to be established
       const cfUrl = await new Promise<string>((resolve, reject) => {
         const startupTimeout = setTimeout(() => {
           reject(new Error("Tunnel startup timed out"));
@@ -278,10 +278,32 @@ export function createBrowserPromptSession(options: BrowserPromptOptions): {
         });
       });
 
-      baseUrl = cfUrl;
-      tunnelOrigin = new URL(cfUrl).origin;
+      // cloudflared reports "connected" when it reaches the edge, but
+      // the hostname may not be routable yet (or ever, during outages).
+      process.stderr.write("Tunnel connected, verifying reachability...\n");
+      let tunnelReachable = false;
+      const probeDeadline = Date.now() + 15000;
+      while (Date.now() < probeDeadline) {
+        try {
+          await fetch(cfUrl, { method: "HEAD", signal: AbortSignal.timeout(3000) });
+          tunnelReachable = true;
+          break;
+        } catch {
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      }
+
+      if (tunnelReachable) {
+        process.stderr.write("HTTPS tunnel ready\n");
+        baseUrl = cfUrl;
+        tunnelOrigin = new URL(cfUrl).origin;
+      } else {
+        process.stderr.write("Tunnel not reachable, falling back to localhost\n");
+        tunnel.stop();
+        tunnelInstance = undefined;
+      }
     } catch {
-      // Tunnel failed - fall back to localhost URL
+      process.stderr.write("Tunnel failed, falling back to localhost\n");
       tunnelInstance = undefined;
     }
 
